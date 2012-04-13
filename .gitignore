@@ -3,3 +3,5 @@
 *.suo
 Debug
 Release
+src/crypto.so
+src/lcrypto.o
