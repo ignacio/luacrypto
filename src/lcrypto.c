@@ -15,6 +15,8 @@
 #include <openssl/x509.h>
 #include <stddef.h>
 
+#include <pthread.h>
+
 
 #ifndef MIN
 # define MIN(a,b) ((a) < (b) ? (a) : (b))
@@ -30,7 +32,10 @@
 #include "lauxlib.h"
 #include "lcrypto.h"
 
+pthread_mutex_t *g_mutexes = NULL;
+
 LUACRYPTO_API int luaopen_crypto(lua_State *L);
+void locking_callback(int mode, int n, const char *file, int line);
 
 static int crypto_error(lua_State *L)
 {
@@ -1048,7 +1053,7 @@ static int pkey_from_pem(lua_State *L)
   int ret;
 
   ret = BIO_puts(mem, key);
-  if (ret != strlen(key)) {
+  if (ret != (int)strlen(key)) {
     goto error;
   }
 
@@ -1891,6 +1896,15 @@ LUACRYPTO_API void luacrypto_set_info (lua_State *L)
   lua_settable (L, -3);
 }
 
+void locking_callback(int mode, int n, const char *file UNUSED, int line UNUSED) {
+	if (mode & CRYPTO_LOCK) {
+		pthread_mutex_lock (g_mutexes + n);
+	}
+	else {
+		pthread_mutex_unlock (g_mutexes + n);
+	}
+}
+
 /*
 ** Creates the metatables for the objects and registers the
 ** driver open method.
@@ -1902,6 +1916,13 @@ LUACRYPTO_API int luaopen_crypto(lua_State *L)
   };
 
 #ifndef OPENSSL_EXTERNAL_INITIALIZATION
+
+  int numLocks = CRYPTO_num_locks();
+  if (numLocks > 0) {
+    g_mutexes = (pthread_mutex_t *) malloc(sizeof(pthread_mutex_t) * numLocks);
+	CRYPTO_set_locking_callback(locking_callback);
+  }
+
   OpenSSL_add_all_digests();
   OpenSSL_add_all_ciphers();
 #endif
